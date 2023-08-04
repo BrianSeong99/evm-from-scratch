@@ -23,6 +23,25 @@ def evm(code):
         pc += 1
 
         # TODO: implement the EVM here!
+        if op == 0x00:
+            # STOP
+            success = True
+        
+        if op == 0x5f:
+            # PUSH0
+            stack.insert(0, 0)
+            success = True
+            
+        if op >= 0x60 and op <= 0x7f:
+            # PUSH1 - PUSH32
+            size = op - 0x60
+            value = 0
+            while size >= 0:
+                value = value | code[pc] << size * 8
+                pc += 1
+                size -= 1
+            stack.insert(0, value)
+            success = True
         
 
     return (success, stack)
