@@ -63,6 +63,10 @@ def evm(code):
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = 0 if num2 == 0 else math.floor(num1 / num2)
             stack.insert(0, value)
+        
+        # if op == 0x05:
+        #     # SDIV
+
 
         if op == 0x06:
             # MOD (by larger number) (by zero)
@@ -93,10 +97,16 @@ def evm(code):
         if op == 0x0b:
             # SIGNEXTEND (positive)
             num1, num2 = get_n_of_stack_elements(2, stack)
-            if num2.bit_length() < 8:
+            num2_bit_length = num2.bit_length()
+            if num2_bit_length % 8 != 0:
                 stack.insert(0, num2)
             else:
-                stack.insert(0, (MAX_UINT256-1) - 0xFF + num2)
+                padding = 1
+                counter = 0
+                while counter < num2_bit_length:
+                    padding = padding << 1
+                    counter += 1
+                stack.insert(0, MAX_UINT256 - padding + num2)
 
         if op == 0x5f:
             # PUSH0
