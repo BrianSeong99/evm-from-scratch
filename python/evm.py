@@ -12,11 +12,21 @@
 
 import json
 import os
+import math
 
 def evm(code):
     pc = 0
     success = True
     stack = []
+    MAX_UINT256 = (2**256)
+
+    def get_n_of_stack_elements(n, stack):
+        if n == 1:
+            return stack.pop(0)
+        if n == 2:
+            return stack.pop(0), stack.pop(0)
+        if n == 3:
+            return stack.pop(0), stack.pop(0), stack.pop(0)
 
     while pc < len(code):
         op = code[pc]
@@ -25,12 +35,72 @@ def evm(code):
         # TODO: implement the EVM here!
         if op == 0x00:
             # STOP
-            success = True
+            break
+
+        if op == 0x01:
+            # ADD (overflow)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 + num2
+            value = value if value <= MAX_UINT256 else value - MAX_UINT256
+            stack.insert(0, value)
         
+        if op == 0x02:
+            # MUL (overflow)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 * num2
+            value = value if value <= MAX_UINT256 else value - MAX_UINT256
+            stack.insert(0, value)
+
+        if op == 0x03:
+            # SUB (overflow)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 - num2
+            value = value if value >= 0 else MAX_UINT256 + value
+            stack.insert(0, value)
+
+        if op == 0x04:
+            # DIV (whole) (by zero)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = 0 if num2 == 0 else math.floor(num1 / num2)
+            stack.insert(0, value)
+
+        if op == 0x06:
+            # MOD (by larger number) (by zero)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 if num1 < num2 \
+                else 0 if num2 == 0 \
+                else num1 % num2
+            stack.insert(0, value)
+
+        if op == 0x08:
+            # ADDMOD (wrapped)
+            num1, num2, num3 = get_n_of_stack_elements(3, stack)
+            value = (num1 + num2) % num3
+            stack.insert(0, value)
+        
+        if op == 0x09:
+            # MULMOD (wrapped)
+            num1, num2, num3 = get_n_of_stack_elements(3, stack)
+            value = (num1 * num2) % num3
+            stack.insert(0, value)
+
+        if op == 0x0a:
+            # EXP
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 ** num2
+            stack.insert(0, value)
+        
+        if op == 0x0b:
+            # SIGNEXTEND (positive)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num2.bit_length() < 8:
+                stack.insert(0, num2)
+            else:
+                stack.insert(0, (MAX_UINT256-1) - 0xFF + num2)
+
         if op == 0x5f:
             # PUSH0
             stack.insert(0, 0)
-            success = True
             
         if op >= 0x60 and op <= 0x7f:
             # PUSH1 - PUSH32
@@ -41,8 +111,11 @@ def evm(code):
                 pc += 1
                 size -= 1
             stack.insert(0, value)
-            success = True
         
+        if op == 0x50:
+            # POP
+            get_n_of_stack_elements(1, stack)
+            success = True
 
     return (success, stack)
 
