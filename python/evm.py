@@ -27,6 +27,11 @@ def evm(code):
             return stack.pop(0), stack.pop(0)
         if n == 3:
             return stack.pop(0), stack.pop(0), stack.pop(0)
+        
+    def is_num_negative(num):
+        if num.bit_length() % 8 == 0:
+            return True, int(num.bit_length() / 8)
+        return False, None
 
     while pc < len(code):
         op = code[pc]
@@ -64,9 +69,37 @@ def evm(code):
             value = 0 if num2 == 0 else math.floor(num1 / num2)
             stack.insert(0, value)
         
-        # if op == 0x05:
-        #     # SDIV
-
+        if op == 0x05:
+            # SDIV
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num1_is_negative, num1_byte_size = is_num_negative(num1)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if not num1_is_negative and not num2_is_negative:
+                # both positive
+                value = num1 / num2
+                stack.insert(0, value)
+            elif num1_is_negative and num2_is_negative:
+                # both negative
+                value = math.floor(((0x1 << num1_byte_size * 8) - num1) / ((0x1 << num2_byte_size * 8) - num2))
+                stack.insert(0, value)
+            elif num1_is_negative:
+                # only one negative, and num1 is negative
+                value = math.floor(((0x1 << num1_byte_size * 8) - num1) / num2)
+                padding = 1
+                counter = 0
+                while counter < num1.bit_length():
+                    padding = padding << 1
+                    counter += 1
+                stack.insert(0, padding - value)
+            elif num2_is_negative:
+                # only one negative, and num2 is negative
+                value = math.floor(num1 / ((0x1 << num2_byte_size * 8) - num2))
+                padding = 1
+                counter = 0
+                while counter < num2.bit_length():
+                    padding = padding << 1
+                    counter += 1
+                stack.insert(0, padding - value)
 
         if op == 0x06:
             # MOD (by larger number) (by zero)
