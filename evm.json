@@ -643,7 +643,7 @@
     }
   },
   {
-    "name": "SLT (greater)",
+    "name": "SLT (less)",
     "hint": "Same as LT but treats arguments as signed numbers. -1 < -1 = false (0)",
     "code": {
       "asm": "PUSH32 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\nPUSH1 0\nSLT",
