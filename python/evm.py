@@ -33,6 +33,9 @@ def evm(code):
             return True, int(num.bit_length() / 8)
         return False, None
 
+    def negative_to_positive(num, byte_size):
+        return ((0x1 << byte_size * 8) - num)
+
     while pc < len(code):
         op = code[pc]
         pc += 1
@@ -72,6 +75,9 @@ def evm(code):
         if op == 0x05:
             # SDIV
             num1, num2 = get_n_of_stack_elements(2, stack)
+            if num2 == 0:
+                stack.insert(0, 0)
+                continue
             num1_is_negative, num1_byte_size = is_num_negative(num1)
             num2_is_negative, num2_byte_size = is_num_negative(num2)
             if not num1_is_negative and not num2_is_negative:
@@ -80,11 +86,11 @@ def evm(code):
                 stack.insert(0, value)
             elif num1_is_negative and num2_is_negative:
                 # both negative
-                value = math.floor(((0x1 << num1_byte_size * 8) - num1) / ((0x1 << num2_byte_size * 8) - num2))
+                value = math.floor(negative_to_positive(num1, num1_byte_size) / negative_to_positive(num2, num2_byte_size))
                 stack.insert(0, value)
             elif num1_is_negative:
                 # only one negative, and num1 is negative
-                value = math.floor(((0x1 << num1_byte_size * 8) - num1) / num2)
+                value = math.floor(negative_to_positive(num1, num1_byte_size) / num2)
                 padding = 1
                 counter = 0
                 while counter < num1.bit_length():
@@ -93,13 +99,32 @@ def evm(code):
                 stack.insert(0, padding - value)
             elif num2_is_negative:
                 # only one negative, and num2 is negative
-                value = math.floor(num1 / ((0x1 << num2_byte_size * 8) - num2))
+                value = math.floor(num1 / negative_to_positive(num2, num2_byte_size))
                 padding = 1
                 counter = 0
                 while counter < num2.bit_length():
                     padding = padding << 1
                     counter += 1
                 stack.insert(0, padding - value)
+        
+        if op == 0x07:
+            # SMOD
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num2 == 0:
+                stack.insert(0, 0)
+                continue
+            num1_is_negative, num1_byte_size = is_num_negative(num1)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num2_is_negative:
+                num2 = negative_to_positive(num2, num2_byte_size)
+            if num1_is_negative:
+                num1 = negative_to_positive(num1, num1_byte_size)
+                value = negative_to_positive((num1 % num2), num1_byte_size)
+                stack.insert(0, value)
+            else:
+                value = num1 % num2
+                stack.insert(0, value)
+
 
         if op == 0x06:
             # MOD (by larger number) (by zero)
