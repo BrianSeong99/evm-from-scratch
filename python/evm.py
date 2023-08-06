@@ -73,7 +73,7 @@ def evm(code):
             stack.insert(0, value)
         
         if op == 0x05:
-            # SDIV
+            # SDIV (negative) (mix of negative and positive) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num2 == 0:
                 stack.insert(0, 0)
@@ -106,9 +106,17 @@ def evm(code):
                     padding = padding << 1
                     counter += 1
                 stack.insert(0, padding - value)
-        
+
+        if op == 0x06:
+            # MOD (by larger number) (by zero)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 if num1 < num2 \
+                else 0 if num2 == 0 \
+                else num1 % num2
+            stack.insert(0, value)
+
         if op == 0x07:
-            # SMOD
+            # SMOD (negative) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num2 == 0:
                 stack.insert(0, 0)
@@ -124,15 +132,6 @@ def evm(code):
             else:
                 value = num1 % num2
                 stack.insert(0, value)
-
-
-        if op == 0x06:
-            # MOD (by larger number) (by zero)
-            num1, num2 = get_n_of_stack_elements(2, stack)
-            value = num1 if num1 < num2 \
-                else 0 if num2 == 0 \
-                else num1 % num2
-            stack.insert(0, value)
 
         if op == 0x08:
             # ADDMOD (wrapped)
