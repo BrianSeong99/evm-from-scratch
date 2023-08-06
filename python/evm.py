@@ -23,15 +23,15 @@ def evm(code):
     def get_n_of_stack_elements(n, stack):
         if n == 1:
             return stack.pop(0)
-        if n == 2:
+        elif n == 2:
             return stack.pop(0), stack.pop(0)
-        if n == 3:
+        elif n == 3:
             return stack.pop(0), stack.pop(0), stack.pop(0)
         
     def is_num_negative(num):
         if num == 0:
             return False, None
-        if num.bit_length() % 8 == 0:
+        elif num.bit_length() % 8 == 0:
             return True, int(num.bit_length() / 8)
         return False, None
 
@@ -47,34 +47,34 @@ def evm(code):
             # STOP
             break
 
-        if op == 0x01:
+        elif op == 0x01:
             # ADD (overflow)
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = num1 + num2
             value = value if value <= MAX_UINT256 else value - MAX_UINT256
             stack.insert(0, value)
         
-        if op == 0x02:
+        elif op == 0x02:
             # MUL (overflow)
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = num1 * num2
             value = value if value <= MAX_UINT256 else value - MAX_UINT256
             stack.insert(0, value)
 
-        if op == 0x03:
+        elif op == 0x03:
             # SUB (overflow)
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = num1 - num2
             value = value if value >= 0 else MAX_UINT256 + value
             stack.insert(0, value)
 
-        if op == 0x04:
+        elif op == 0x04:
             # DIV (whole) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = 0 if num2 == 0 else math.floor(num1 / num2)
             stack.insert(0, value)
         
-        if op == 0x05:
+        elif op == 0x05:
             # SDIV (negative) (mix of negative and positive) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num2 == 0:
@@ -109,7 +109,7 @@ def evm(code):
                     counter += 1
                 stack.insert(0, padding - value)
 
-        if op == 0x06:
+        elif op == 0x06:
             # MOD (by larger number) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = num1 if num1 < num2 \
@@ -117,7 +117,7 @@ def evm(code):
                 else num1 % num2
             stack.insert(0, value)
 
-        if op == 0x07:
+        elif op == 0x07:
             # SMOD (negative) (by zero)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num2 == 0:
@@ -135,25 +135,25 @@ def evm(code):
                 value = num1 % num2
                 stack.insert(0, value)
 
-        if op == 0x08:
+        elif op == 0x08:
             # ADDMOD (wrapped)
             num1, num2, num3 = get_n_of_stack_elements(3, stack)
             value = (num1 + num2) % num3
             stack.insert(0, value)
         
-        if op == 0x09:
+        elif op == 0x09:
             # MULMOD (wrapped)
             num1, num2, num3 = get_n_of_stack_elements(3, stack)
             value = (num1 * num2) % num3
             stack.insert(0, value)
 
-        if op == 0x0a:
+        elif op == 0x0a:
             # EXP
             num1, num2 = get_n_of_stack_elements(2, stack)
             value = num1 ** num2
             stack.insert(0, value)
         
-        if op == 0x0b:
+        elif op == 0x0b:
             # SIGNEXTEND (positive)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num2_bit_length = num2.bit_length()
@@ -167,7 +167,7 @@ def evm(code):
                     counter += 1
                 stack.insert(0, MAX_UINT256 - padding + num2)
         
-        if op == 0x10:
+        elif op == 0x10:
             # LT (equal) (greater)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num1 - num2 < 0:
@@ -175,7 +175,7 @@ def evm(code):
             else:
                 stack.insert(0, 0)
         
-        if op == 0x11:
+        elif op == 0x11:
             # GT (equal) (less)
             num1, num2 = get_n_of_stack_elements(2, stack)
             if num1 - num2 > 0:
@@ -183,7 +183,7 @@ def evm(code):
             else:
                 stack.insert(0, 0)
         
-        if op == 0x12:
+        elif op == 0x12:
             # SLT (equal) (less)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num1_is_negative, num1_byte_size = is_num_negative(num1)
@@ -199,7 +199,7 @@ def evm(code):
             else:
                 stack.insert(0, 1 if num1 - num2 < 0 else 0)
         
-        if op == 0x13:
+        elif op == 0x13:
             # SGT (equal) (greater)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num1_is_negative, num1_byte_size = is_num_negative(num1)
@@ -215,11 +215,11 @@ def evm(code):
             else:
                 stack.insert(0, 1 if num1 - num2 > 0 else 0)
 
-        if op == 0x5f:
+        elif op == 0x5f:
             # PUSH0
             stack.insert(0, 0)
             
-        if op >= 0x60 and op <= 0x7f:
+        elif op >= 0x60 and op <= 0x7f:
             # PUSH1 - PUSH32
             size = op - 0x60
             value = 0
@@ -229,7 +229,7 @@ def evm(code):
                 size -= 1
             stack.insert(0, value)
         
-        if op == 0x50:
+        elif op == 0x50:
             # POP
             get_n_of_stack_elements(1, stack)
             success = True
