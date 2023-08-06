@@ -214,6 +214,46 @@ def evm(code):
                 stack.insert(0, 0)
             else:
                 stack.insert(0, 1 if num1 - num2 > 0 else 0)
+        
+        elif op == 0x14:
+            # EQ (not equal)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num1 - num2 == 0:
+                stack.insert(0, 1)
+            else:
+                stack.insert(0, 0)
+
+        elif op == 0x15:
+            # ISZERO (not zero) (zero)
+            num1 = get_n_of_stack_elements(1, stack)
+            if num1 == 0:
+                stack.insert(0, 1)
+            else:
+                stack.insert(0, 0)
+        
+        elif op == 0x16:
+            # AND
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 & num2
+            stack.insert(0, value)
+        
+        elif op == 0x17:
+            # AND
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 | num2
+            stack.insert(0, value)
+        
+        elif op == 0x18:
+            # AND
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            value = num1 ^ num2
+            stack.insert(0, value)
+
+        elif op == 0x19:
+            # NOT
+            num1 = get_n_of_stack_elements(1, stack)
+            value = MAX_UINT256-1 - num1
+            stack.insert(0, value)
 
         elif op == 0x5f:
             # PUSH0
