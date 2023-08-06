@@ -29,6 +29,8 @@ def evm(code):
             return stack.pop(0), stack.pop(0), stack.pop(0)
         
     def is_num_negative(num):
+        if num == 0:
+            return False, None
         if num.bit_length() % 8 == 0:
             return True, int(num.bit_length() / 8)
         return False, None
@@ -164,6 +166,54 @@ def evm(code):
                     padding = padding << 1
                     counter += 1
                 stack.insert(0, MAX_UINT256 - padding + num2)
+        
+        if op == 0x10:
+            # LT (equal) (greater)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num1 - num2 < 0:
+                stack.insert(0, 1)
+            else:
+                stack.insert(0, 0)
+        
+        if op == 0x11:
+            # GT (equal) (less)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num1 - num2 > 0:
+                stack.insert(0, 1)
+            else:
+                stack.insert(0, 0)
+        
+        if op == 0x12:
+            # SLT (equal) (less)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num1_is_negative, num1_byte_size = is_num_negative(num1)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num1_is_negative and num2_is_negative:
+                num1 = negative_to_positive(num1, num1_byte_size)
+                num2 = negative_to_positive(num2, num2_byte_size)
+                stack.insert(0, 1 if num1 - num2 > 0 else 0)
+            elif num1_is_negative:
+                stack.insert(0, 1)
+            elif num2_is_negative:
+                stack.insert(0, 0)
+            else:
+                stack.insert(0, 1 if num1 - num2 < 0 else 0)
+        
+        if op == 0x13:
+            # SGT (equal) (greater)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num1_is_negative, num1_byte_size = is_num_negative(num1)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num1_is_negative and num2_is_negative:
+                num1 = negative_to_positive(num1, num1_byte_size)
+                num2 = negative_to_positive(num2, num2_byte_size)
+                stack.insert(0, 1 if num1 - num2 < 0 else 0)
+            elif num2_is_negative:
+                stack.insert(0, 1)
+            elif num1_is_negative:
+                stack.insert(0, 0)
+            else:
+                stack.insert(0, 1 if num1 - num2 > 0 else 0)
 
         if op == 0x5f:
             # PUSH0
