@@ -19,6 +19,7 @@ def evm(code):
     success = True
     stack = []
     MAX_UINT256 = (2**256)
+    BYTE_SIZE = 8
 
     def get_n_of_stack_elements(n, stack):
         if n == 1:
@@ -30,13 +31,17 @@ def evm(code):
         
     def is_num_negative(num):
         if num == 0:
-            return False, None
-        elif num.bit_length() % 8 == 0:
-            return True, int(num.bit_length() / 8)
-        return False, None
+            return False, None # The Byte Size here should be dependent to the num format
+        if num.bit_length() % BYTE_SIZE == 0:
+            return True, int(num.bit_length() / BYTE_SIZE)
+        return False, int(math.floor(num.bit_length() / BYTE_SIZE))+1
 
     def negative_to_positive(num, byte_size):
-        return ((0x1 << byte_size * 8) - num)
+        return ((0x1 << byte_size * BYTE_SIZE) - num)
+
+    def extract_lower_bits(num, n_bits):
+        bit_mask = (0x1 << n_bits) - 1
+        return num & bit_mask
 
     while pc < len(code):
         op = code[pc]
@@ -157,7 +162,7 @@ def evm(code):
             # SIGNEXTEND (positive)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num2_bit_length = num2.bit_length()
-            if num2_bit_length % 8 != 0:
+            if num2_bit_length % BYTE_SIZE != 0:
                 stack.insert(0, num2)
             else:
                 padding = 1
@@ -255,6 +260,47 @@ def evm(code):
             value = MAX_UINT256-1 - num1
             stack.insert(0, value)
 
+        elif op == 0x1b:
+            # SHL (discards) (too large)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num1 > MAX_UINT256.bit_length(): # (too large)
+                stack.insert(0, 0)
+            elif num2.bit_length() + num1 < num2_byte_size * BYTE_SIZE: # not sure if the boundary should be the num's original num format or UINTMAX256
+                value = num2 << num1
+                stack.insert(0, value)
+            else: # (discards)
+                value = extract_lower_bits(num2, num2_byte_size * BYTE_SIZE - num1) << num1
+                stack.insert(0, value)
+
+        elif op == 0x1c:
+            # SHR (discards) (too large)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num2.bit_length() - num1 >= (num2_byte_size-1) * BYTE_SIZE: # (discards) (too large)
+                value = num2 >> num1
+                stack.insert(0, value)
+            else:
+                stack.insert(0, 0)
+
+        elif op == 0x1d:
+            # SAR (fills 1s) (too large) (positive, too large)
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            num2_is_negative, num2_byte_size = is_num_negative(num2)
+            if num2.bit_length() - num1 >= (num2_byte_size-1) * BYTE_SIZE:
+                if num2_is_negative: # (fills 1s) 
+                    bit_mask = ((0x1 << num2_byte_size * BYTE_SIZE) - 1) ^ ((0x1 << (num2_byte_size * BYTE_SIZE - num1)) - 1)
+                    value = (num2 >> num1) | bit_mask
+                    stack.insert(0, value)
+                else: # positive
+                    value = num2 >> num1
+                    stack.insert(0, value)
+            else: # (too large) 
+                if num2_is_negative:
+                    stack.insert(0, (0x1 << (num2_byte_size * BYTE_SIZE)) - 1)
+                else:
+                    stack.insert(0, 0)
+
         elif op == 0x5f:
             # PUSH0
             stack.insert(0, 0)
@@ -264,7 +310,7 @@ def evm(code):
             size = op - 0x60
             value = 0
             while size >= 0:
-                value = value | code[pc] << size * 8
+                value = value | code[pc] << size * BYTE_SIZE
                 pc += 1
                 size -= 1
             stack.insert(0, value)
@@ -295,8 +341,10 @@ def test():
                 print(f"❌ Test #{i + 1}/{total} {test['name']}")
                 if stack != expected_stack:
                     print("Stack doesn't match")
-                    print(" expected:", expected_stack)
-                    print("   actual:", stack)
+                    print(" expected in decimal:", expected_stack)
+                    print("   actual in decimal:", stack)
+                    print(" expected in hex:", [hex(expected) for expected in expected_stack])
+                    print("   actual in hex:", [hex(ele) for ele in stack])
                 else:
                     print("Success doesn't match")
                     print(" expected:", test['expect']['success'])
