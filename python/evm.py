@@ -44,6 +44,13 @@ def evm(code):
         bit_mask = (0x1 << n_bits) - 1
         return num & bit_mask
 
+    def is_invalid_JUMPDEST(destination_offset):
+        for i in range(1, 33):
+            index = destination_offset - i
+            if index >= 0 and code[index] >= 0x5f + i and code[index] < 0x80:
+                return True
+        return False
+
     while pc < len(code):
         op = code[pc]
         # print()
@@ -316,6 +323,29 @@ def evm(code):
             get_n_of_stack_elements(1, stack)
             success = True
         
+        elif op == 0x56:
+            # JUMP
+            num = get_n_of_stack_elements(1, stack)
+            if code[num] == 0x5b and not is_invalid_JUMPDEST(num):
+                pc = num
+                continue
+            else:
+                success = False
+                break
+        
+        elif op == 0x57:
+            # JUMPI
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num2 == 0:
+                pass
+            else:
+                if code[num1] == 0x5b and not is_invalid_JUMPDEST(num1):
+                    pc = num1
+                    continue
+                else:
+                    success = False
+                    break
+        
         elif op == 0x58:
             # PC
             stack.insert(0, pc)
@@ -323,6 +353,10 @@ def evm(code):
         elif op == 0x5a:
             # GAS
             stack.insert(0, MAX_UINT256)
+        
+        elif op == 0x5b:
+            # JUMPDEST
+            pass
 
         elif op == 0x5f:
             # PUSH0
