@@ -260,6 +260,18 @@ def evm(code):
             num1 = get_n_of_stack_elements(1, stack)
             value = MAX_UINT256-1 - num1
             stack.insert(0, value)
+        
+        elif op == 0x1a:
+            # BYTE
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if num1 > 31 or num1 < 0: # (out of range)
+                stack.insert(0, 0)
+            else:
+                high_bit_mask = (0x1 << ((32 - num1) * 8)) - 1
+                low_bit_mask = (0x1 << ((32 - num1 - 1) * 8)) - 1 if 32 - num1 - 1 > 0 else 0
+                bit_mask = high_bit_mask ^ low_bit_mask
+                value = (num2 & bit_mask) >> (32 - num1 - 1) * 8
+                stack.insert(0, value)
 
         elif op == 0x1b:
             # SHL (discards) (too large)
