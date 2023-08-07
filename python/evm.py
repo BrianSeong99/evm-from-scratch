@@ -18,8 +18,9 @@ def evm(code):
     pc = 0
     success = True
     stack = []
-    MAX_UINT256 = (2**256)
     BYTE_SIZE = 8
+    MAX_UINT256 = 2**256
+    MAX_UINT32 = 2**32
 
     def get_n_of_stack_elements(n, stack):
         if n == 1:
@@ -264,11 +265,8 @@ def evm(code):
             # SHL (discards) (too large)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num2_is_negative, num2_byte_size = is_num_negative(num2)
-            if num1 > MAX_UINT256.bit_length(): # (too large)
+            if num1 >= MAX_UINT32-1: # (too large)
                 stack.insert(0, 0)
-            elif num2.bit_length() + num1 < num2_byte_size * BYTE_SIZE: # not sure if the boundary should be the num's original num format or UINTMAX256
-                value = num2 << num1
-                stack.insert(0, value)
             else: # (discards)
                 value = extract_lower_bits(num2, num2_byte_size * BYTE_SIZE - num1) << num1
                 stack.insert(0, value)
@@ -277,17 +275,22 @@ def evm(code):
             # SHR (discards) (too large)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num2_is_negative, num2_byte_size = is_num_negative(num2)
-            if num2.bit_length() - num1 >= (num2_byte_size-1) * BYTE_SIZE: # (discards) (too large)
+            if num1 >= MAX_UINT32-1: # (too large)
+                stack.insert(0, 0)
+            else: # (discards) 
                 value = num2 >> num1
                 stack.insert(0, value)
-            else:
-                stack.insert(0, 0)
 
         elif op == 0x1d:
             # SAR (fills 1s) (too large) (positive, too large)
             num1, num2 = get_n_of_stack_elements(2, stack)
             num2_is_negative, num2_byte_size = is_num_negative(num2)
-            if num2.bit_length() - num1 >= (num2_byte_size-1) * BYTE_SIZE:
+            if num1 >= MAX_UINT32-1:  # (too large) 
+                if num2_is_negative:
+                    stack.insert(0, (0x1 << (num2_byte_size * BYTE_SIZE)) - 1)
+                else:
+                    stack.insert(0, 0)
+            else:
                 if num2_is_negative: # (fills 1s) 
                     bit_mask = ((0x1 << num2_byte_size * BYTE_SIZE) - 1) ^ ((0x1 << (num2_byte_size * BYTE_SIZE - num1)) - 1)
                     value = (num2 >> num1) | bit_mask
@@ -295,11 +298,6 @@ def evm(code):
                 else: # positive
                     value = num2 >> num1
                     stack.insert(0, value)
-            else: # (too large) 
-                if num2_is_negative:
-                    stack.insert(0, (0x1 << (num2_byte_size * BYTE_SIZE)) - 1)
-                else:
-                    stack.insert(0, 0)
 
         elif op == 0x5f:
             # PUSH0
