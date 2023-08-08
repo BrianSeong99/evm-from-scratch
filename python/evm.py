@@ -13,11 +13,13 @@
 import json
 import os
 import math
+from eth_hash.auto import keccak
 
-def evm(code):
+def evm(code, tx, block, state):
     pc = 0
     success = True
     stack = []
+    memory = []
     BYTE_SIZE = 8
     MAX_UINT256 = 2**256 - 1
     MAX_UINT32 = 2**32 - 1
@@ -318,11 +320,152 @@ def evm(code):
                     value = num2 >> num1
                     stack.insert(0, value)
 
+        elif op == 0x20:
+            # SHA3
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if len(memory) < num1 + num2:
+                memory += ([0] * (num1 + 32 - len(memory)))
+            value = 0
+            for i in range(num2):
+                value = value << BYTE_SIZE
+                value += memory[num1 + i]
+            hashed_value = int.from_bytes(keccak(value.to_bytes(num2, byteorder='big')), byteorder="big")
+            stack.insert(0, hashed_value)
+
+        elif op == 0x30:
+            # Address
+            value = int(tx['to'], 16)
+            stack.insert(0, value)
+
+        elif op == 0x31:
+            # Balance
+            num1 = get_n_of_stack_elements(1, stack)
+            if state is not None and hex(num1) in state:
+                value = int(state[hex(num1)]["balance"], 16)
+                stack.insert(0, value)
+            else:
+                stack.insert(0, 0)
+        
+        elif op == 0x32:
+            # Origin
+            value = int(tx['origin'], 16)
+            stack.insert(0, value)
+
+        elif op == 0x33:
+            # Caller
+            value = int(tx['from'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x34:
+            # CALLVALUE
+            value = int(tx['value'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x35:
+            # CALLDATALOAD
+            byte_offset = get_n_of_stack_elements(1, stack)
+            value = int(tx['data'], 16)
+            value = (value << (BYTE_SIZE * byte_offset)) & ((0x1 << 256) - 1) # (tail)
+            stack.insert(0, value)
+
+        elif op == 0x36:
+            # CALLDATASIZE
+            if tx is not None:
+                data = int(tx.get('data', 0), 16)
+                count = 1
+                while data > 0:
+                    data = data >> BYTE_SIZE
+                    count += 1
+                stack.insert(0, count)
+            else:
+                stack.insert(0, 0)
+
+        elif op == 0x37:
+            # CALLDATACOPY
+            dest_offset, byte_offset, byte_size = get_n_of_stack_elements(3, stack)
+            value = int(tx['data'], 16)
+            bit_mask = ((0x1 << 256) - 1) ^ ((0x1 << (256 - byte_size * 8)) - 1)
+            value = (value << (BYTE_SIZE * byte_offset)) & bit_mask # (tail)
+            if len(memory) < dest_offset + 32: # (tail)
+                memory += [0] * (dest_offset + 32 - len(memory))
+            for i in range(32):
+                memory[dest_offset + 31 - i] = (value >> (i * 8)) & 0xFF
+
+        elif op == 0x3a:
+            # Gasprice
+            value = int(tx['gasprice'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x40:
+            # Blockhash
+            pass
+
+        elif op == 0x41:
+            # Coinbase
+            value = int(block['coinbase'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x42:
+            # Timestamp
+            value = int(block['timestamp'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x43:
+            # Block Number
+            value = int(block['number'], 16)
+            stack.insert(0, value)
+
+        elif op == 0x44:
+            # Difficulty
+            value = int(block['difficulty'], 16)
+            stack.insert(0, value)
+
+        elif op == 0x45:
+            # GasLimit
+            value = int(block['gaslimit'], 16)
+            stack.insert(0, value)
+        
+        elif op == 0x46:
+            # Chainid
+            value = int(block['chainid'], 16)
+            stack.insert(0, value)
+
+        elif op == 0x48:
+            # Basefee
+            value = int(block['basefee'], 16)
+            stack.insert(0, value)
+
         elif op == 0x50:
             # POP
             get_n_of_stack_elements(1, stack)
             success = True
         
+        elif op == 0x51:
+            # MLOAD
+            num1 = get_n_of_stack_elements(1, stack)
+            if len(memory) < num1 + 32:
+                memory += ([0] * (num1 + 32 - len(memory)))
+            value = 0
+            for i in range(32):
+                value = value << BYTE_SIZE
+                value += memory[num1 + i]
+            stack.insert(0, value)
+
+        elif op == 0x52:
+            # MSTORE
+            byte_offset, num = get_n_of_stack_elements(2, stack)
+            if len(memory) < byte_offset + 32: # (tail)
+                memory += [0] * (byte_offset + 32 - len(memory))
+            for i in range(32):
+                memory[byte_offset + 31 - i] = (num >> (i * 8)) & 0xFF
+
+        elif op == 0x53:
+            # MSTORE8
+            num1, num2 = get_n_of_stack_elements(2, stack)
+            if len(memory) < num1 + 1:
+                memory += [0] * (num1 + 1 - len(memory))
+            memory[num1] = num2 & 0xff
+
         elif op == 0x56:
             # JUMP
             num = get_n_of_stack_elements(1, stack)
@@ -349,6 +492,11 @@ def evm(code):
         elif op == 0x58:
             # PC
             stack.insert(0, pc)
+
+        elif op == 0x59:
+            # MSIZE
+            value = math.ceil(len(memory) / 32) * 32
+            stack.insert(0, value)
 
         elif op == 0x5a:
             # GAS
@@ -404,7 +552,10 @@ def test():
             # Note: as the test cases get more complex, you'll need to modify this
             # to pass down more arguments to the evm function
             code = bytes.fromhex(test['code']['bin'])
-            (success, stack) = evm(code)
+            tx = test.get('tx')
+            block = test.get('block')
+            state = test.get('state')
+            (success, stack) = evm(code, tx, block, state)
 
             expected_stack = [int(x, 16) for x in test['expect']['stack']]
             
