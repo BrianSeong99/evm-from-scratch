@@ -391,6 +391,22 @@ def evm(code, tx, block, state):
             for i in range(32):
                 memory[dest_offset + 31 - i] = (data >> (i * 8)) & 0xFF
 
+        elif op == 0x38:
+            # CODESIZE (small)
+            stack.insert(0, len(code))
+        
+        elif op == 0x39:
+            # CODECOPY
+            dest_offset, byte_offset, byte_size = get_n_of_stack_elements(3, stack)
+            if len(memory) < dest_offset + byte_size:
+                memory += ([0] * (dest_offset + byte_size - len (memory)))
+            data = code
+            for i in range(byte_size):
+                if (byte_offset + i) < len(data):
+                    memory[dest_offset + i] = data[byte_offset + i]
+                else:
+                    memory[dest_offset + i] = 0
+
         elif op == 0x3a:
             # Gasprice
             gasprice = int(tx['gasprice'], 16)
