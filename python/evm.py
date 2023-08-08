@@ -31,6 +31,8 @@ def evm(code, tx, block, state):
             return stack.pop(0), stack.pop(0)
         elif n == 3:
             return stack.pop(0), stack.pop(0), stack.pop(0)
+        elif n == 4:
+            return stack.pop(0), stack.pop(0), stack.pop(0), stack.pop(0)
         
     def is_num_negative(num):
         if num == 0:
@@ -52,6 +54,9 @@ def evm(code, tx, block, state):
             if index >= 0 and code[index] >= 0x5f + i and code[index] < 0x80:
                 return True
         return False
+
+    def padding_address(address):
+        return '0x' + '0'*(22 - len(address)) + address[2:] if len(address) < 22 else address
 
     while pc < len(code):
         op = code[pc]
@@ -333,12 +338,12 @@ def evm(code, tx, block, state):
             stack.insert(0, hashed_value)
 
         elif op == 0x30:
-            # Address
+            # ADDRESS
             address = int(tx['to'], 16)
             stack.insert(0, address)
 
         elif op == 0x31:
-            # Balance
+            # BALANCE
             address = get_n_of_stack_elements(1, stack)
             if state is not None and hex(address) in state:
                 balance = int(state[hex(address)]["balance"], 16)
@@ -347,12 +352,12 @@ def evm(code, tx, block, state):
                 stack.insert(0, 0)
         
         elif op == 0x32:
-            # Origin
+            # ORIGIN
             address = int(tx['origin'], 16)
             stack.insert(0, address)
 
         elif op == 0x33:
-            # Caller
+            # CALLER
             address = int(tx['from'], 16)
             stack.insert(0, address)
         
@@ -412,42 +417,88 @@ def evm(code, tx, block, state):
             gasprice = int(tx['gasprice'], 16)
             stack.insert(0, gasprice)
         
+        elif op == 0x3b:
+            # EXTCODESIZE
+            address = hex(get_n_of_stack_elements(1, stack))
+            address = padding_address(address)
+            if state is None or address not in state or 'code' not in state[address]:
+                stack.insert(0, 0)
+            else:
+                stack.insert(0, len(state[address]['code']['bin']) / 2)
+        
+        elif op == 0x3c:
+            # EXTCODECOPY
+            address, dest_offset, byte_offset, byte_size = get_n_of_stack_elements(4, stack)
+            address = padding_address(hex(address))
+            
+            extcode = b''
+            if state is None or address not in state or 'code' not in state[address]:
+                extcode = b''
+            else:
+                extcode = bytes.fromhex(state[address]['code']['bin'])
+            
+            if len(memory) < dest_offset + byte_size:
+                memory += ([0] * (dest_offset + byte_size - len (memory)))
+            for i in range(byte_size):
+                if (byte_offset + i) < len(extcode):
+                    memory[dest_offset + i] = extcode[byte_offset + i]
+                else:
+                    memory[dest_offset + i] = 0
+
+        elif op == 0x3f:
+            # EXTCODEHASH
+            address = hex(get_n_of_stack_elements(1, stack))
+            address = padding_address(address)
+            if state is None or address not in state or 'code' not in state[address]:
+                stack.insert(0, 0)
+            else:
+                extcode = bytes.fromhex(state[address]['code']['bin'])
+                stack.insert(0, int.from_bytes(keccak(extcode), byteorder='big'))
+
         elif op == 0x40:
-            # Blockhash
+            # BLOCKHASH
             pass
 
         elif op == 0x41:
-            # Coinbase
+            # COINBASE
             coinbase = int(block['coinbase'], 16)
             stack.insert(0, coinbase)
         
         elif op == 0x42:
-            # Timestamp
+            # TIMESTAMP
             timestamp = int(block['timestamp'], 16)
             stack.insert(0, timestamp)
         
         elif op == 0x43:
-            # Block Number
+            # BLOCKNUMBER
             blocknumber = int(block['number'], 16)
             stack.insert(0, blocknumber)
 
         elif op == 0x44:
-            # Difficulty
+            # DIFFICULTY
             difficulty = int(block['difficulty'], 16)
             stack.insert(0, difficulty)
 
         elif op == 0x45:
-            # GasLimit
+            # GASLIMIT
             gaslimit = int(block['gaslimit'], 16)
             stack.insert(0, gaslimit)
         
         elif op == 0x46:
-            # Chainid
+            # CHAINID
             chainid = int(block['chainid'], 16)
             stack.insert(0, chainid)
+        
+        elif op == 0x47:
+            # SELFBALANCE
+            address = tx["to"]
+            if state is None or address not in state or 'balance' not in state[address]:
+                stack.insert(0, 0)
+            else:
+                stack.insert(0, int(state[address]['balance'], 16))
 
         elif op == 0x48:
-            # Basefee
+            # BASEFEE
             basefee = int(block['basefee'], 16)
             stack.insert(0, basefee)
 
