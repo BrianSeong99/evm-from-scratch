@@ -15,12 +15,14 @@ import os
 import math
 from eth_hash.auto import keccak
 
-def evm(code, tx, block, state):
+# Persistent
+storage = {}
+
+def evm(code, tx, block, state, static_mode=False):
     pc = 0
     success = True
     stack = []
     memory = []
-    storage = {}
     logs = []
     ret = None
     last_ret = None
@@ -473,6 +475,12 @@ def evm(code, tx, block, state):
             else:
                 stack.insert(0, 0)
 
+        # RETURNDATACOPY
+        elif op == 0x3e:
+            [dest_offset, byte_offset, byte_size], stack = get_n_of_stack_elements(3, stack)
+            data = last_ret[byte_offset * 2 : (byte_offset + byte_size) * 2]
+            memory = mstore(memory, int(data, 16), dest_offset, byte_size)
+
         # EXTCODEHASH
         elif op == 0x3f:
             [address], stack = get_n_of_stack_elements(1, stack)
@@ -560,6 +568,9 @@ def evm(code, tx, block, state):
         
         # SSTORE
         elif op == 0x55:
+            if static_mode:
+                success = False
+                break
             [key, value], stack = get_n_of_stack_elements(2, stack)
             storage[hex(key)] = value
 
@@ -652,6 +663,33 @@ def evm(code, tx, block, state):
                 "topics": topics
             })
 
+        # CREATE
+        elif op == 0xf0:
+            [value, byte_offset, byte_size], stack = get_n_of_stack_elements(3, stack)
+            address = tx['to']
+            contract = mload(memory, byte_offset, byte_size)
+            if contract != 0:
+                _success, _, _logs, _ret = evm(bytes.fromhex(hex(contract)[2:]), {}, block, False)
+                if not _success:
+                    stack.insert(0, 0)
+                else:
+                    stack.insert(0, int(address, 16))
+                    if state is None:
+                        state = {}
+                    state[address] = {
+                        'balance': hex(value),
+                        'code': {
+                            'bin': _ret,
+                        }
+                    }
+            else:
+                stack.insert(0, int(address, 16))
+                if state is None:
+                    state = {}
+                state[address] = {
+                    'balance': hex(value),
+                }
+
         # CALL
         elif op == 0xf1:
             [gas, address, value, args_offset, args_size, ret_offset, ret_size], stack = get_n_of_stack_elements(7, stack)
@@ -663,10 +701,10 @@ def evm(code, tx, block, state):
                 "origin": tx.get("origin") if tx else None,
                 "from": tx.get("to") if tx else None,
             }
-            _success, _, new_logs, new_ret = evm(bytes.fromhex(state[address]['code']['bin']), new_tx, block, state)
+            _success, _, new_logs, new_ret = evm(bytes.fromhex(state[address]['code']['bin']), new_tx, block, state, False)
             logs += new_logs
-            new_ret = new_ret[:ret_size * 2]
-            if len(new_ret) != 0:
+            if new_ret != None and len(new_ret) != 0:
+                new_ret = new_ret[:ret_size * 2]
                 memory = mstore(memory, int(new_ret, 16), ret_offset, ret_size)
                 last_ret = new_ret
             stack.insert(0, int(_success))
@@ -678,6 +716,37 @@ def evm(code, tx, block, state):
             ret = hex(data)[2:]
             break
             
+        # DELEGATECALL
+        elif op == 0xf4:
+            [gas, address, args_offset, args_size, ret_offset, ret_size], stack = get_n_of_stack_elements(6, stack)
+            address = padding_address(hex(address))
+            args = mload(memory, args_offset, args_size)
+            _success, _, new_logs, new_ret = evm(bytes.fromhex(state[address]['code']['bin']), tx, block, state, False)
+            logs += new_logs
+            if new_ret != None and len(new_ret) != 0:
+                new_ret = new_ret[:ret_size * 2]
+                memory = mstore(memory, int(new_ret, 16), ret_offset, ret_size)
+                last_ret = new_ret
+            stack.insert(0, int(_success))
+
+        # STATICCALL
+        elif op == 0xfa:
+            [gas, address, args_offset, args_size, ret_offset, ret_size], stack = get_n_of_stack_elements(6, stack)
+            address = padding_address(hex(address))
+            args = mload(memory, args_offset, args_size)
+            new_tx = {
+                "to": address,
+                "origin": tx.get("origin") if tx else None,
+                "from": tx.get("to") if tx else None
+            }
+            _success, _, new_logs, new_ret = evm(bytes.fromhex(state[address]['code']['bin']), new_tx, block, state, True)
+            logs += new_logs
+            if new_ret != None and len(new_ret) != 0:
+                new_ret = new_ret[:ret_size * 2]
+                memory = mstore(memory, int(new_ret, 16), ret_offset, ret_size)
+                last_ret = new_ret
+            stack.insert(0, int(_success))
+
         # REVERT
         elif op == 0xfd:
             [byte_offset, byte_size], stack = get_n_of_stack_elements(2, stack)
@@ -691,6 +760,18 @@ def evm(code, tx, block, state):
             success = False
             break
         
+        # SELFDESTRUCT
+        elif op == 0xff:
+            [address], stack = get_n_of_stack_elements(1, stack)
+            address = padding_address(hex(address))
+            del state[tx['to']]['code']
+            balance = int(state[tx['to']]['balance'], 16)
+            state[tx['to']]['balance'] = '0x0'
+            if address not in state: # in case the address was never accessed, then even so, the balance will still be sent to the address, there's no revert
+                state[address] = {
+                    'balance': '0x0',
+                }
+            state[address]['balance'] = hex(int(state[address]['balance'], 16) + balance)
         pc += 1
 
     return (success, stack, logs, ret)
@@ -709,7 +790,7 @@ def test():
             tx = test.get('tx')
             block = test.get('block')
             state = test.get('state')
-            (success, stack, logs, ret) = evm(code, tx, block, state)
+            (success, stack, logs, ret) = evm(code, tx, block, state, False)
 
             expected_stack = [int(x, 16) for x in test['expect'].get('stack', [])]
             expected_logs = test['expect'].get('logs', [])
