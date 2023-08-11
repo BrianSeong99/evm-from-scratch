@@ -22,6 +22,7 @@ def evm(code, tx, block, state):
     memory = []
     storage = {}
     logs = []
+    ret = None
     BYTE_SIZE = 8
     MAX_UINT256 = 2**256 - 1
     MAX_UINT32 = 2**32 - 1
@@ -61,6 +62,15 @@ def evm(code, tx, block, state):
 
     def padding_address(address):
         return '0x' + '0'*(22 - len(address)) + address[2:] if len(address) < 22 else address
+
+    def mload(memory, byte_offset, byte_size):
+        if len(memory) < byte_offset + byte_size:
+            memory += ([0] * (byte_offset + byte_size - len(memory)))
+        data = 0
+        for i in range(byte_size):
+            data = data << BYTE_SIZE
+            data += memory[byte_offset + i]
+        return data
 
     while pc < len(code):
         op = code[pc]
@@ -513,12 +523,7 @@ def evm(code, tx, block, state):
         elif op == 0x51:
             # MLOAD
             [byte_offset] = get_n_of_stack_elements(1, stack)
-            if len(memory) < byte_offset + 32:
-                memory += ([0] * (byte_offset + 32 - len(memory)))
-            data = 0
-            for i in range(32):
-                data = data << BYTE_SIZE
-                data += memory[byte_offset + i]
+            data = mload(memory, byte_offset, 32)
             stack.insert(0, data)
 
         elif op == 0x52:
@@ -622,7 +627,6 @@ def evm(code, tx, block, state):
                 topics = [hex(ele) for ele in topics]
             else:
                 topics = []
-            # topics = [hex(ele) for ele in [get_n_of_stack_elements(log_num, stack)]] if log_num != 0 else []
             if len(memory) < byte_offset + 32:
                 memory += ([0] * (byte_offset + 32 - len(memory)))
             data = 0
@@ -636,13 +640,29 @@ def evm(code, tx, block, state):
                 "topics": topics
             })
 
+        elif op == 0xf3:
+            # RETURN
+            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            data = mload(memory, byte_offset, byte_size)
+            ret = hex(data)[2:]
+            break
+            
+        elif op == 0xfd:
+            # REVERT
+            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            data = mload(memory, byte_offset, byte_size)
+            ret = hex(data)[2:]
+            success = False
+            break
+
         elif op == 0xfe:
             # INVALID
             success = False
+            break
         
         pc += 1
 
-    return (success, stack, logs)
+    return (success, stack, logs, ret)
 
 def test():
     script_dirname = os.path.dirname(os.path.abspath(__file__))
@@ -658,12 +678,14 @@ def test():
             tx = test.get('tx')
             block = test.get('block')
             state = test.get('state')
-            (success, stack, logs) = evm(code, tx, block, state)
+            (success, stack, logs, ret) = evm(code, tx, block, state)
 
             expected_stack = [int(x, 16) for x in test['expect'].get('stack', [])]
             expected_logs = test['expect'].get('logs', [])
+            expected_return = test['expect'].get("return", None)
 
-            if stack != expected_stack or success != test['expect']['success'] or expected_logs != logs:
+
+            if stack != expected_stack or success != test['expect']['success'] or expected_logs != logs or expected_return != ret:
                 print(f"❌ Test #{i + 1}/{total} {test['name']}")
                 if stack != expected_stack:
                     print("Stack doesn't match")
@@ -675,6 +697,10 @@ def test():
                     print("Log doesn't match")
                     print(" expected:", expected_logs)
                     print("   actual:", logs)
+                elif expected_return != ret:
+                    print("Return doesn't match")
+                    print(" expected:", expected_return)
+                    print("   actual:", ret)
                 else:
                     print("Success doesn't match")
                     print(" expected:", test['expect']['success'])
