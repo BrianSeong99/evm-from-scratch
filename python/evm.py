@@ -23,21 +23,25 @@ def evm(code, tx, block, state):
     storage = {}
     logs = []
     ret = None
+    last_ret = None
     BYTE_SIZE = 8
     MAX_UINT256 = 2**256 - 1
     MAX_UINT32 = 2**32 - 1
 
     def get_n_of_stack_elements(n, stack):
-        if n == 0:
+        if n <= 0:
             return None
-        elif n == 1:
-            return [stack.pop(0)]
-        elif n == 2:
-            return [stack.pop(0), stack.pop(0)]
-        elif n == 3:
-            return [stack.pop(0), stack.pop(0), stack.pop(0)]
-        elif n == 4:
-            return [stack.pop(0), stack.pop(0), stack.pop(0), stack.pop(0)]
+        else:
+            result = stack[:n]
+            stack = stack[n:]
+            return result, stack
+        #     return [stack.pop(0)]
+        # elif n == 2:
+        #     return [stack.pop(0), stack.pop(0)]
+        # elif n == 3:
+        #     return [stack.pop(0), stack.pop(0), stack.pop(0)]
+        # elif n == 4:
+        #     return [stack.pop(0), stack.pop(0), stack.pop(0), stack.pop(0)]
         
     def is_num_negative(num):
         if num == 0:
@@ -72,43 +76,47 @@ def evm(code, tx, block, state):
             data += memory[byte_offset + i]
         return data
 
+    def mstore(memory, data, byte_offset, byte_size):
+        if len(memory) < byte_offset + byte_size:
+            memory += ([0] * (byte_offset + byte_size - len(memory)))
+        for i in range(byte_size):
+            memory[byte_offset + byte_size - i - 1] = (data >> (i * 8)) & 0xFF
+        return memory
+
     while pc < len(code):
         op = code[pc]
-        # print()
-        # print("opcode: ", hex(op))
 
-        # TODO: implement the EVM here!
+        # STOP
         if op == 0x00:
-            # STOP
             break
 
+        # ADD (overflow)
         elif op == 0x01:
-            # ADD (overflow)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = (a + b)  % (MAX_UINT256+1)
             stack.insert(0, value)
         
+        # MUL (overflow)
         elif op == 0x02:
-            # MUL (overflow)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack  = get_n_of_stack_elements(2, stack)
             value = (a * b)  % (MAX_UINT256+1)
             stack.insert(0, value)
 
+        # SUB (overflow)
         elif op == 0x03:
-            # SUB (overflow)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack  = get_n_of_stack_elements(2, stack)
             value = (a - b)  % (MAX_UINT256+1)
             stack.insert(0, value)
 
+        # DIV (whole) (by zero)
         elif op == 0x04:
-            # DIV (whole) (by zero)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = 0 if b == 0 else math.floor(a / b)
             stack.insert(0, value)
         
+        # SDIV (negative) (mix of negative and positive) (by zero)
         elif op == 0x05:
-            # SDIV (negative) (mix of negative and positive) (by zero)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             if b == 0:
                 stack.insert(0, 0)
             else:
@@ -141,17 +149,17 @@ def evm(code, tx, block, state):
                         counter += 1
                     stack.insert(0, padding - value)
 
+        # MOD (by larger number) (by zero)
         elif op == 0x06:
-            # MOD (by larger number) (by zero)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = a if a < b \
                 else 0 if b == 0 \
                 else a % b
             stack.insert(0, value)
 
+        # SMOD (negative) (by zero)
         elif op == 0x07:
-            # SMOD (negative) (by zero)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             if b == 0:
                 stack.insert(0, 0)
             else:
@@ -167,27 +175,27 @@ def evm(code, tx, block, state):
                     value = a % b
                     stack.insert(0, value)
 
+        # ADDMOD (wrapped)
         elif op == 0x08:
-            # ADDMOD (wrapped)
-            [a, b, N] = get_n_of_stack_elements(3, stack)
+            [a, b, N], stack = get_n_of_stack_elements(3, stack)
             value = (a + b) % N
             stack.insert(0, value)
         
+        # MULMOD (wrapped)
         elif op == 0x09:
-            # MULMOD (wrapped)
-            [a, b, N] = get_n_of_stack_elements(3, stack)
+            [a, b, N], stack = get_n_of_stack_elements(3, stack)
             value = (a * b) % N
             stack.insert(0, value)
 
+        # EXP
         elif op == 0x0a:
-            # EXP
-            [a, exponent] = get_n_of_stack_elements(2, stack)
+            [a, exponent], stack = get_n_of_stack_elements(2, stack)
             value = a ** exponent
             stack.insert(0, value)
         
+        # SIGNEXTEND (positive)
         elif op == 0x0b:
-            # SIGNEXTEND (positive)
-            [b, x] = get_n_of_stack_elements(2, stack)
+            [b, x], stack = get_n_of_stack_elements(2, stack)
             x_bit_length = x.bit_length()
             if x_bit_length % BYTE_SIZE != 0:
                 stack.insert(0, x)
@@ -200,25 +208,25 @@ def evm(code, tx, block, state):
                 padding = padding - 1 # after bit shift, need to minus one
                 stack.insert(0, MAX_UINT256 - padding + x)
         
+        # LT (equal) (greater)
         elif op == 0x10:
-            # LT (equal) (greater)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             if a - b < 0:
                 stack.insert(0, 1)
             else:
                 stack.insert(0, 0)
         
+        # GT (equal) (less)
         elif op == 0x11:
-            # GT (equal) (less)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             if a - b > 0:
                 stack.insert(0, 1)
             else:
                 stack.insert(0, 0)
         
+        # SLT (equal) (less)
         elif op == 0x12:
-            # SLT (equal) (less)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             a_is_negative, a_byte_size = is_num_negative(a)
             b_is_negative, b_byte_size = is_num_negative(b)
             if a_is_negative and b_is_negative:
@@ -232,9 +240,9 @@ def evm(code, tx, block, state):
             else:
                 stack.insert(0, 1 if a - b < 0 else 0)
         
+        # SGT (equal) (greater)
         elif op == 0x13:
-            # SGT (equal) (greater)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             a_is_negative, a_byte_size = is_num_negative(a)
             b_is_negative, b_byte_size = is_num_negative(b)
             if a_is_negative and b_is_negative:
@@ -248,49 +256,49 @@ def evm(code, tx, block, state):
             else:
                 stack.insert(0, 1 if a - b > 0 else 0)
         
+        # EQ (not equal)
         elif op == 0x14:
-            # EQ (not equal)
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             if a - b == 0:
                 stack.insert(0, 1)
             else:
                 stack.insert(0, 0)
 
+        # ISZERO (not zero) (zero)
         elif op == 0x15:
-            # ISZERO (not zero) (zero)
-            [a] = get_n_of_stack_elements(1, stack)
+            [a], stack = get_n_of_stack_elements(1, stack)
             if a == 0:
                 stack.insert(0, 1)
             else:
                 stack.insert(0, 0)
         
+        # AND
         elif op == 0x16:
-            # AND
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = a & b
             stack.insert(0, value)
         
+        # OR
         elif op == 0x17:
-            # OR
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = a | b
             stack.insert(0, value)
         
+        # XOR
         elif op == 0x18:
-            # XOR
-            [a, b] = get_n_of_stack_elements(2, stack)
+            [a, b], stack = get_n_of_stack_elements(2, stack)
             value = a ^ b
             stack.insert(0, value)
 
+        # NOT
         elif op == 0x19:
-            # NOT
-            [a] = get_n_of_stack_elements(1, stack)
+            [a], stack = get_n_of_stack_elements(1, stack)
             value = MAX_UINT256 - a
             stack.insert(0, value)
         
+        # BYTE
         elif op == 0x1a:
-            # BYTE
-            [byte_offset, num] = get_n_of_stack_elements(2, stack)
+            [byte_offset, num], stack = get_n_of_stack_elements(2, stack)
             if byte_offset > 31 or byte_offset < 0: # (out of range)
                 stack.insert(0, 0)
             else:
@@ -300,9 +308,9 @@ def evm(code, tx, block, state):
                 value = (num & bit_mask) >> (32 - byte_offset - 1) * 8
                 stack.insert(0, value)
 
+        # SHL (discards) (too large)
         elif op == 0x1b:
-            # SHL (discards) (too large)
-            [shift, num] = get_n_of_stack_elements(2, stack)
+            [shift, num], stack = get_n_of_stack_elements(2, stack)
             num_is_negative, num_byte_size = is_num_negative(num)
             if shift >= MAX_UINT32: # (too large)
                 stack.insert(0, 0)
@@ -310,9 +318,9 @@ def evm(code, tx, block, state):
                 value = extract_lower_bits(num, num_byte_size * BYTE_SIZE - shift) << shift
                 stack.insert(0, value)
 
+        # SHR (discards) (too large)
         elif op == 0x1c:
-            # SHR (discards) (too large)
-            [shift, num] = get_n_of_stack_elements(2, stack)
+            [shift, num], stack = get_n_of_stack_elements(2, stack)
             num_is_negative, num_byte_size = is_num_negative(num)
             if shift >= MAX_UINT32: # (too large)
                 stack.insert(0, 0)
@@ -320,9 +328,9 @@ def evm(code, tx, block, state):
                 value = num >> shift
                 stack.insert(0, value)
 
+        # SAR (fills 1s) (too large) (positive, too large)
         elif op == 0x1d:
-            # SAR (fills 1s) (too large) (positive, too large)
-            [shift, num] = get_n_of_stack_elements(2, stack)
+            [shift, num], stack = get_n_of_stack_elements(2, stack)
             num_is_negative, num_byte_size = is_num_negative(num)
             if shift >= MAX_UINT32:  # (too large) 
                 if num_is_negative:
@@ -338,9 +346,9 @@ def evm(code, tx, block, state):
                     value = num >> shift
                     stack.insert(0, value)
 
+        # SHA3
         elif op == 0x20:
-            # SHA3
-            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            [byte_offset, byte_size], stack = get_n_of_stack_elements(2, stack)
             if len(memory) < byte_offset + byte_size:
                 memory += ([0] * (byte_offset + 32 - len(memory)))
             value = 0
@@ -350,44 +358,44 @@ def evm(code, tx, block, state):
             hashed_value = int.from_bytes(keccak(value.to_bytes(byte_size, byteorder='big')), byteorder="big")
             stack.insert(0, hashed_value)
 
+        # ADDRESS
         elif op == 0x30:
-            # ADDRESS
             address = int(tx['to'], 16)
             stack.insert(0, address)
 
+        # BALANCE
         elif op == 0x31:
-            # BALANCE
-            [address] = get_n_of_stack_elements(1, stack)
+            [address], stack = get_n_of_stack_elements(1, stack)
             if state is not None and hex(address) in state:
                 balance = int(state[hex(address)]["balance"], 16)
                 stack.insert(0, balance)
             else:
                 stack.insert(0, 0)
         
+        # ORIGIN
         elif op == 0x32:
-            # ORIGIN
             address = int(tx['origin'], 16)
             stack.insert(0, address)
 
+        # CALLER
         elif op == 0x33:
-            # CALLER
             address = int(tx['from'], 16)
             stack.insert(0, address)
         
+        # CALLVALUE
         elif op == 0x34:
-            # CALLVALUE
             value = int(tx['value'], 16)
             stack.insert(0, value)
         
+        # CALLDATALOAD
         elif op == 0x35:
-            # CALLDATALOAD
-            [byte_offset] = get_n_of_stack_elements(1, stack)
+            [byte_offset], stack = get_n_of_stack_elements(1, stack)
             data = int(tx['data'], 16)
             data = (data << (BYTE_SIZE * byte_offset)) & ((0x1 << 256) - 1) # (tail)
             stack.insert(0, data)
 
+        # CALLDATASIZE
         elif op == 0x36:
-            # CALLDATASIZE
             if tx is not None:
                 data = int(tx.get('data', 0), 16)
                 count = 1
@@ -398,9 +406,9 @@ def evm(code, tx, block, state):
             else:
                 stack.insert(0, 0)
 
+        # CALLDATACOPY
         elif op == 0x37:
-            # CALLDATACOPY
-            [dest_offset, byte_offset, byte_size] = get_n_of_stack_elements(3, stack)
+            [dest_offset, byte_offset, byte_size], stack = get_n_of_stack_elements(3, stack)
             data = int(tx['data'], 16)
             bit_mask = ((0x1 << 256) - 1) ^ ((0x1 << (256 - byte_size * 8)) - 1)
             data = (data << (BYTE_SIZE * byte_offset)) & bit_mask # (tail)
@@ -409,13 +417,13 @@ def evm(code, tx, block, state):
             for i in range(32):
                 memory[dest_offset + 31 - i] = (data >> (i * 8)) & 0xFF
 
+        # CODESIZE (small)
         elif op == 0x38:
-            # CODESIZE (small)
             stack.insert(0, len(code))
         
+        # CODECOPY
         elif op == 0x39:
-            # CODECOPY
-            [dest_offset, byte_offset, byte_size] = get_n_of_stack_elements(3, stack)
+            [dest_offset, byte_offset, byte_size], stack = get_n_of_stack_elements(3, stack)
             if len(memory) < dest_offset + byte_size:
                 memory += ([0] * (dest_offset + byte_size - len (memory)))
             data = code
@@ -425,23 +433,23 @@ def evm(code, tx, block, state):
                 else:
                     memory[dest_offset + i] = 0
 
+        # GASPRICE
         elif op == 0x3a:
-            # Gasprice
             gasprice = int(tx['gasprice'], 16)
             stack.insert(0, gasprice)
         
+        # EXTCODESIZE
         elif op == 0x3b:
-            # EXTCODESIZE
-            [address] = get_n_of_stack_elements(1, stack)
+            [address], stack = get_n_of_stack_elements(1, stack)
             address = padding_address(hex(address))
             if state is None or address not in state or 'code' not in state[address]:
                 stack.insert(0, 0)
             else:
                 stack.insert(0, len(state[address]['code']['bin']) / 2)
         
+        # EXTCODECOPY
         elif op == 0x3c:
-            # EXTCODECOPY
-            [address, dest_offset, byte_offset, byte_size] = get_n_of_stack_elements(4, stack)
+            [address, dest_offset, byte_offset, byte_size], stack = get_n_of_stack_elements(4, stack)
             address = padding_address(hex(address))
             
             extcode = b''
@@ -458,9 +466,16 @@ def evm(code, tx, block, state):
                 else:
                     memory[dest_offset + i] = 0
 
+        # RETURNDATASIZE
+        elif op == 0x3d:
+            if last_ret:
+                stack.insert(0, len(last_ret) / 2)
+            else:
+                stack.insert(0, 0)
+
+        # EXTCODEHASH
         elif op == 0x3f:
-            # EXTCODEHASH
-            [address] = get_n_of_stack_elements(1, stack)
+            [address], stack = get_n_of_stack_elements(1, stack)
             address = padding_address(hex(address))
             if state is None or address not in state or 'code' not in state[address]:
                 stack.insert(0, 0)
@@ -468,92 +483,89 @@ def evm(code, tx, block, state):
                 extcode = bytes.fromhex(state[address]['code']['bin'])
                 stack.insert(0, int.from_bytes(keccak(extcode), byteorder='big'))
 
+        # BLOCKHASH
         elif op == 0x40:
-            # BLOCKHASH
             pass
 
+        # COINBASE
         elif op == 0x41:
-            # COINBASE
             coinbase = int(block['coinbase'], 16)
             stack.insert(0, coinbase)
         
+        # TIMESTAMP
         elif op == 0x42:
-            # TIMESTAMP
             timestamp = int(block['timestamp'], 16)
             stack.insert(0, timestamp)
         
+        # BLOCKNUMBER
         elif op == 0x43:
-            # BLOCKNUMBER
             blocknumber = int(block['number'], 16)
             stack.insert(0, blocknumber)
 
+        # DIFFICULTY
         elif op == 0x44:
-            # DIFFICULTY
             difficulty = int(block['difficulty'], 16)
             stack.insert(0, difficulty)
 
+        # GASLIMIT
         elif op == 0x45:
-            # GASLIMIT
             gaslimit = int(block['gaslimit'], 16)
             stack.insert(0, gaslimit)
         
+        # CHAINID
         elif op == 0x46:
-            # CHAINID
             chainid = int(block['chainid'], 16)
             stack.insert(0, chainid)
         
+        # SELFBALANCE
         elif op == 0x47:
-            # SELFBALANCE
             address = tx["to"]
             if state is None or address not in state or 'balance' not in state[address]:
                 stack.insert(0, 0)
             else:
                 stack.insert(0, int(state[address]['balance'], 16))
 
+        # BASEFEE
         elif op == 0x48:
-            # BASEFEE
             basefee = int(block['basefee'], 16)
             stack.insert(0, basefee)
 
+        # POP
         elif op == 0x50:
-            # POP
-            get_n_of_stack_elements(1, stack)
+            result, stack = get_n_of_stack_elements(1, stack)
             success = True
         
+        # MLOAD
         elif op == 0x51:
-            # MLOAD
-            [byte_offset] = get_n_of_stack_elements(1, stack)
+            [byte_offset], stack = get_n_of_stack_elements(1, stack)
             data = mload(memory, byte_offset, 32)
             stack.insert(0, data)
 
+        # MSTORE
         elif op == 0x52:
-            # MSTORE
-            [byte_offset, num] = get_n_of_stack_elements(2, stack)
-            if len(memory) < byte_offset + 32: # (tail)
-                memory += [0] * (byte_offset + 32 - len(memory))
-            for i in range(32):
-                memory[byte_offset + 31 - i] = (num >> (i * 8)) & 0xFF
+            [byte_offset, num], stack = get_n_of_stack_elements(2, stack)
+            mstore(memory, num, byte_offset, 32)
 
+        # MSTORE8
         elif op == 0x53:
-            # MSTORE8
-            [byte_offset, num] = get_n_of_stack_elements(2, stack)
+            [byte_offset, num], stack = get_n_of_stack_elements(2, stack)
             if len(memory) < byte_offset + 1:
                 memory += [0] * (byte_offset + 1 - len(memory))
             memory[byte_offset] = num & 0xff
 
+        # SLOAD
         elif op == 0x54:
-            # SLOAD
-            [key] = get_n_of_stack_elements(1, stack)
+            [key], stack = get_n_of_stack_elements(1, stack)
             stack.insert(0, storage.get(hex(key), 0))
         
+        # SSTORE
         elif op == 0x55:
-            # SSTORE
-            [key, value] = get_n_of_stack_elements(2, stack)
+            [key, value], stack = get_n_of_stack_elements(2, stack)
             storage[hex(key)] = value
 
+        # JUMP
         elif op == 0x56:
-            # JUMP
-            [counter] = get_n_of_stack_elements(1, stack)
+            [counter], stack = get_n_of_stack_elements(1, stack)
             if code[counter] == 0x5b and not is_invalid_JUMPDEST(counter):
                 pc = counter
                 continue
@@ -561,9 +573,9 @@ def evm(code, tx, block, state):
                 success = False
                 break
         
+        # JUMPI
         elif op == 0x57:
-            # JUMPI
-            [counter, b] = get_n_of_stack_elements(2, stack)
+            [counter, b], stack = get_n_of_stack_elements(2, stack)
             if b == 0:
                 pass
             else:
@@ -574,29 +586,29 @@ def evm(code, tx, block, state):
                     success = False
                     break
         
+        # PC
         elif op == 0x58:
-            # PC
             stack.insert(0, pc)
 
+        # MSIZE
         elif op == 0x59:
-            # MSIZE
             value = math.ceil(len(memory) / 32) * 32
             stack.insert(0, value)
 
+        # GAS
         elif op == 0x5a:
-            # GAS
             stack.insert(0, MAX_UINT256)
         
+        # JUMPDEST
         elif op == 0x5b:
-            # JUMPDEST
             pass
 
+        # PUSH0
         elif op == 0x5f:
-            # PUSH0
             stack.insert(0, 0)
             
+        # PUSH1 - PUSH32
         elif op >= 0x60 and op <= 0x7f:
-            # PUSH1 - PUSH32
             size = op - 0x60
             value = 0
             while size >= 0:
@@ -605,25 +617,25 @@ def evm(code, tx, block, state):
                 size -= 1
             stack.insert(0, value)
 
+        # DUP1 - 16
         elif op >= 0x80 and op <= 0x8f:
-            # DUP1 - 16
             index = op - 0x80
             num = stack[index]
             stack.insert(0, num)
         
+        # SWAP1 - 16
         elif op >= 0x90 and op <= 0x9f:
-            # SWAP1 - 16
             index = op - 0x90 + 1
             num = stack[index]
             stack[index] = stack[0]
             stack[0] = num
         
+        # LOG0 - 4
         elif op >= 0xa0 and op <= 0xa4:
-            # LOG0 - 4
-            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            [byte_offset, byte_size], stack = get_n_of_stack_elements(2, stack)
             log_num = op - 0xa0
             if log_num != 0:
-                topics = get_n_of_stack_elements(log_num, stack)
+                topics, stack = get_n_of_stack_elements(log_num, stack)
                 topics = [hex(ele) for ele in topics]
             else:
                 topics = []
@@ -640,23 +652,42 @@ def evm(code, tx, block, state):
                 "topics": topics
             })
 
+        # CALL
+        elif op == 0xf1:
+            [gas, address, value, args_offset, args_size, ret_offset, ret_size], stack = get_n_of_stack_elements(7, stack)
+            address = padding_address(hex(address))
+            args = mload(memory, args_offset, args_size)
+            new_tx = {
+                "to": address,
+                "value": value,
+                "origin": tx.get("origin") if tx else None,
+                "from": tx.get("to") if tx else None,
+            }
+            _success, _, new_logs, new_ret = evm(bytes.fromhex(state[address]['code']['bin']), new_tx, block, state)
+            logs += new_logs
+            new_ret = new_ret[:ret_size * 2]
+            if len(new_ret) != 0:
+                memory = mstore(memory, int(new_ret, 16), ret_offset, ret_size)
+                last_ret = new_ret
+            stack.insert(0, int(_success))
+
+        # RETURN
         elif op == 0xf3:
-            # RETURN
-            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            [byte_offset, byte_size], stack = get_n_of_stack_elements(2, stack)
             data = mload(memory, byte_offset, byte_size)
             ret = hex(data)[2:]
             break
             
+        # REVERT
         elif op == 0xfd:
-            # REVERT
-            [byte_offset, byte_size] = get_n_of_stack_elements(2, stack)
+            [byte_offset, byte_size], stack = get_n_of_stack_elements(2, stack)
             data = mload(memory, byte_offset, byte_size)
             ret = hex(data)[2:]
             success = False
             break
 
+        # INVALID
         elif op == 0xfe:
-            # INVALID
             success = False
             break
         
